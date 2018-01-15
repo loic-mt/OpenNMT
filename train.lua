@@ -97,15 +97,17 @@ local function mergeDicts(dicts, mergedDicts)
     end
   end
 
-  for i = 1, dicts.tgt.words:size() do
-    local label = dicts.tgt.words.idxToLabel[i]
-    local idx = mergedDicts.tgt.words.labelToIdx[label]
-    -- add a old word to the end of new dicts
-    if idx == nil then
-      idx = mergedDicts.tgt.words:size() + 1
-      mergedDicts.tgt.words.idxToLabel[idx] = label
-      mergedDicts.tgt.words.labelToIdx[label] = idx
-    end
+  if dicts.tgt then
+     for i = 1, dicts.tgt.words:size() do
+        local label = dicts.tgt.words.idxToLabel[i]
+        local idx = mergedDicts.tgt.words.labelToIdx[label]
+        -- add a old word to the end of new dicts
+        if idx == nil then
+           idx = mergedDicts.tgt.words:size() + 1
+           mergedDicts.tgt.words.idxToLabel[idx] = label
+           mergedDicts.tgt.words.labelToIdx[label] = idx
+        end
+     end
   end
 
   return mergedDicts
@@ -138,6 +140,12 @@ local function updateVocab(checkpoint, dicts, opt)
         return
       end
   end)
+
+  if opt.model_type == 'lm' then
+     checkpoint.models.generator = onmt.Factory.buildGenerator(opt, dicts.src)
+     checkpoint.models.criterion =  onmt.ParallelClassNLLCriterion(onmt.Factory.getOutputSizes(dicts.src))
+     checkpoint.srcVocabSize = dicts.src.words:size(1)
+  end
 
   if decoder then
     decoder:apply(function(m)
@@ -184,7 +192,9 @@ local function updateVocab(checkpoint, dicts, opt)
     end)
   end
   _G.logger:info(' * Updated source dictionary size: %d', dicts.src.words:size())
-  _G.logger:info(' * Updated target dictionary size: %d', dicts.tgt.words:size())
+  if opt.model_type ~= 'lm' then
+     _G.logger:info(' * Updated target dictionary size: %d', dicts.tgt.words:size())
+  end
   checkpoint.dicts = dicts
 
   return checkpoint
@@ -260,9 +270,13 @@ local function loadModel(opt, dicts)
 
   if opt.update_vocab ~= 'none' then
     _G.logger:info(' * new source dictionary size: %d', dicts.src.words:size())
-    _G.logger:info(' * new target dictionary size: %d', dicts.tgt.words:size())
+    if opt.model_type ~= 'lm' then
+       _G.logger:info(' * new target dictionary size: %d', dicts.tgt.words:size())
+    end
     _G.logger:info(' * old source dictionary size: %d', checkpoint.dicts.src.words:size())
-    _G.logger:info(' * old target dictionary size: %d', checkpoint.dicts.tgt.words:size())
+    if opt.model_type ~= 'lm' then
+       _G.logger:info(' * old target dictionary size: %d', checkpoint.dicts.tgt.words:size())
+    end
     if opt.update_vocab == 'merge' then
       _G.logger:info(' * Merging new / old dictionaries...')
       dicts = mergeDicts(checkpoint.dicts, dicts)
